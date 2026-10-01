@@ -25,8 +25,8 @@ pub fn build(b: *std.Build) void {
     const zlib_mode = b.option(ZlibMode, "zlib", "Zlib implementation (default: bundled)") orelse .bundled;
 
     // Target properties
-    const ptr_size: usize = @divExact(target.result.ptrBitWidth(), 8);
-    const long_size: usize = if (target.result.os.tag == .windows or ptr_size == 4) 4 else 8;
+    const ptr_size: i64 = @as(i64, @intCast(@divExact(target.result.ptrBitWidth(), 8)));
+    const long_size: i64 = if (target.result.os.tag == .windows or ptr_size == 4) 4 else 8;
     const is_windows = target.result.os.tag == .windows;
     const is_darwin = target.result.os.tag.isDarwin();
     const is_linux = target.result.os.tag == .linux;
@@ -34,175 +34,109 @@ pub fn build(b: *std.Build) void {
     // Generated files
     const wf = b.addWriteFiles();
 
-    // 1. ma_config.h
-    const os_defines = if (is_windows)
-        \\#define SOCKET_SIZE_TYPE int
-        \\#define HAVE_DLOPEN 1
-        \\#define _CRT_SECURE_NO_WARNINGS 1
-        \\#define _CRT_NONSTDC_NO_DEPRECATE 1
-        \\#define HAVE_FLOAT_H 1
-        \\#define HAVE_LIMITS_H 1
-        \\#define HAVE_STDDEF_H 1
-        \\#define HAVE_STDINT_H 1
-        \\#define HAVE_STDLIB_H 1
-        \\#define HAVE_STRING_H 1
-        \\#define HAVE_SYS_STAT_H 1
-        \\#define HAVE_SYS_TYPES_H 1
-        \\#define HAVE_FCNTL_H 1
-        \\#define HAVE_MEMCPY 1
-        \\#define HAVE_MEMMOVE 1
-        \\#define HAVE_SETLOCALE 1
-    else if (is_linux)
-        \\#define SOCKET_SIZE_TYPE socklen_t
-        \\#define HAVE_ALLOCA_H 1
-        \\#define HAVE_DLFCN_H 1
-        \\#define HAVE_FCNTL_H 1
-        \\#define HAVE_FLOAT_H 1
-        \\#define HAVE_LIMITS_H 1
-        \\#define HAVE_LINUX_LIMITS_H 1
-        \\#define HAVE_PWD_H 1
-        \\#define HAVE_STDDEF_H 1
-        \\#define HAVE_STDINT_H 1
-        \\#define HAVE_STDLIB_H 1
-        \\#define HAVE_STRING_H 1
-        \\#define HAVE_SYS_IOCTL_H 1
-        \\#define HAVE_SYS_SELECT_H 1
-        \\#define HAVE_SYS_SOCKET_H 1
-        \\#define HAVE_SYS_STAT_H 1
-        \\#define HAVE_SYS_TYPES_H 1
-        \\#define HAVE_SYS_UN_H 1
-        \\#define HAVE_UNISTD_H 1
-        \\#define HAVE_DLERROR 1
-        \\#define HAVE_DLOPEN 1
-        \\#define HAVE_GETPWUID 1
-        \\#define HAVE_MEMCPY 1
-        \\#define HAVE_POLL 1
-        \\#define HAVE_SETLOCALE 1
-        \\#define HAVE_NL_LANGINFO 1
-    else
-        \\#define SOCKET_SIZE_TYPE socklen_t
-        \\#define HAVE_ALLOCA_H 1
-        \\#define HAVE_DLFCN_H 1
-        \\#define HAVE_FCNTL_H 1
-        \\#define HAVE_FLOAT_H 1
-        \\#define HAVE_LIMITS_H 1
-        \\#define HAVE_PWD_H 1
-        \\#define HAVE_STDDEF_H 1
-        \\#define HAVE_STDINT_H 1
-        \\#define HAVE_STDLIB_H 1
-        \\#define HAVE_STRING_H 1
-        \\#define HAVE_SYS_IOCTL_H 1
-        \\#define HAVE_SYS_SELECT_H 1
-        \\#define HAVE_SYS_SOCKET_H 1
-        \\#define HAVE_SYS_STAT_H 1
-        \\#define HAVE_SYS_TYPES_H 1
-        \\#define HAVE_SYS_UN_H 1
-        \\#define HAVE_UNISTD_H 1
-        \\#define HAVE_DLERROR 1
-        \\#define HAVE_DLOPEN 1
-        \\#define HAVE_GETPWUID 1
-        \\#define HAVE_MEMCPY 1
-        \\#define HAVE_POLL 1
-        \\#define HAVE_SETLOCALE 1
-        \\#define HAVE_NL_LANGINFO 1
-    ;
+    // 1. ma_config.h and config.h generated from upstream include/ma_config.h.in
+    const ma_config_values = .{
+        .HAVE_ALLOCA_H = !is_windows,
+        .HAVE_BIGENDIAN = (target.result.cpu.arch.endian() == .big),
+        .HAVE_SETLOCALE = true,
+        .HAVE_NL_LANGINFO = !is_windows,
+        .HAVE_DLFCN_H = !is_windows,
+        .HAVE_FCNTL_H = !is_windows,
+        .HAVE_FLOAT_H = true,
+        .HAVE_LIMITS_H = true,
+        .HAVE_LINUX_LIMITS_H = is_linux,
+        .HAVE_PWD_H = !is_windows,
+        .HAVE_SELECT_H = false,
+        .HAVE_STDDEF_H = true,
+        .HAVE_STDINT_H = true,
+        .HAVE_STDLIB_H = true,
+        .HAVE_STRING_H = true,
+        .HAVE_SYS_IOCTL_H = !is_windows,
+        .HAVE_SYS_SELECT_H = !is_windows,
+        .HAVE_SYS_SOCKET_H = !is_windows,
+        .HAVE_SYS_STAT_H = true,
+        .HAVE_SYS_TYPES_H = true,
+        .HAVE_SYS_UN_H = !is_windows,
+        .HAVE_UNISTD_H = !is_windows,
+        .HAVE_DLERROR = !is_windows,
+        .HAVE_DLOPEN = true,
+        .HAVE_GETPWUID = !is_windows,
+        .HAVE_MEMCPY = true,
+        .HAVE_POLL = !is_windows,
+        .HAVE_STRTOK_R = !is_windows,
+        .HAVE_STRTOL = true,
+        .HAVE_STRTOLL = true,
+        .HAVE_STRTOUL = true,
+        .HAVE_STRTOULL = true,
+        .HAVE_VSNPRINTF = true,
+        .HAVE_OPENSSL_APPLINK_C = false,
+        .HAVE_evp_pkey = (ssl_backend == .openssl),
+        .DEFAULT_SSL_VERIFY_SERVER_CERT = true,
 
-    const ssl_defines = switch (ssl_backend) {
-        .openssl =>
-        \\#define HAVE_OPENSSL 1
-        \\#define HAVE_TLS 1
-        \\#define HAVE_evp_pkey 1
-        ,
-        .schannel =>
-        \\#define HAVE_SCHANNEL 1
-        \\#define HAVE_TLS 1
-        \\#define HAVE_WINCRYPT 1
-        ,
-        .none => "",
+        .SIZEOF_CHARP = ptr_size,
+        .SIZEOF_INT = @as(i64, 4),
+        .SIZEOF_LONG = long_size,
+        .SIZEOF_LONG_LONG = @as(i64, 8),
+        .SIZEOF_SIZE_T = ptr_size,
+        .SIZEOF_UINT = null,
+        .SIZEOF_USHORT = null,
+        .SIZEOF_ULONG = null,
+        .SIZEOF_INT8 = null,
+        .SIZEOF_UINT8 = null,
+        .SIZEOF_INT16 = null,
+        .SIZEOF_UINT16 = null,
+        .SIZEOF_INT32 = null,
+        .SIZEOF_UINT32 = null,
+        .SIZEOF_INT64 = null,
+        .SIZEOF_UINT64 = null,
+        .SIZEOF_SOCKLEN_T = if (is_windows) null else @as(i64, 4),
+        .SOCKET_SIZE_TYPE = if (is_windows) "int" else "socklen_t",
+        .ENABLED_LOCAL_INFILE = "AUTO",
+        .DEFAULT_CHARSET = "utf8mb4",
     };
 
-    const config_h = std.fmt.allocPrint(
-        b.allocator,
-        \\#ifndef _ma_config_h
-        \\#define _ma_config_h
-        \\
-        \\#define SIZEOF_CHARP {d}
-        \\#define HAVE_CHARP 1
-        \\#define SIZEOF_INT 4
-        \\#define HAVE_INT 1
-        \\#define SIZEOF_LONG {d}
-        \\#define HAVE_LONG 1
-        \\#define SIZEOF_LONG_LONG 8
-        \\#define HAVE_LONG_LONG 1
-        \\#define SIZEOF_SIZE_T {d}
-        \\#define HAVE_SIZE_T 1
-        \\
-        \\{s}
-        \\{s}
-        \\
-        \\#define LOCAL_INFILE_MODE_OFF  0
-        \\#define LOCAL_INFILE_MODE_ON   1
-        \\#define LOCAL_INFILE_MODE_AUTO 2
-        \\#define ENABLED_LOCAL_INFILE LOCAL_INFILE_MODE_AUTO
-        \\#define MARIADB_DEFAULT_CHARSET "utf8mb4"
-        \\#define DEFAULT_SSL_VERIFY_SERVER_CERT 1
-        \\
-        \\#endif /* _ma_config_h */
-        \\
-    , .{
-        ptr_size,
-        long_size,
-        ptr_size,
-        os_defines,
-        ssl_defines,
-    }) catch @panic("OOM");
+    const ma_config_header = b.addConfigHeader(
+        .{
+            .style = .{ .cmake = upstream.path("include/ma_config.h.in") },
+            .include_path = "ma_config.h",
+        },
+        ma_config_values,
+    );
 
-    _ = wf.add("include/ma_config.h", config_h);
-    _ = wf.add("include/config.h", config_h);
+    const config_header = b.addConfigHeader(
+        .{
+            .style = .{ .cmake = upstream.path("include/ma_config.h.in") },
+            .include_path = "config.h",
+        },
+        ma_config_values,
+    );
 
-    // 2. mariadb_version.h
+    // 2. mariadb_version.h generated from upstream mariadb_version.h.in
     const system_name = @tagName(target.result.os.tag);
     const machine_name = @tagName(target.result.cpu.arch);
 
-    const version_h = std.fmt.allocPrint(
-        b.allocator,
-        \\#ifndef _mariadb_version_h_
-        \\#define _mariadb_version_h_
-        \\
-        \\#define PROTOCOL_VERSION 10
-        \\#define MARIADB_CLIENT_VERSION_STR "10.8.8"
-        \\#define MARIADB_BASE_VERSION "mariadb-10.8"
-        \\#define MARIADB_VERSION_ID 100808
-        \\#define MARIADB_PORT 3306
-        \\#define MARIADB_UNIX_ADDR "/tmp/mysql.sock"
-        \\#ifndef MYSQL_UNIX_ADDR
-        \\#define MYSQL_UNIX_ADDR MARIADB_UNIX_ADDR
-        \\#endif
-        \\#ifndef MYSQL_PORT
-        \\#define MYSQL_PORT MARIADB_PORT
-        \\#endif
-        \\
-        \\#define MYSQL_CONFIG_NAME "my"
-        \\#define MYSQL_VERSION_ID 100808
-        \\#define MYSQL_SERVER_VERSION "10.8.8-MariaDB"
-        \\
-        \\#define MARIADB_PACKAGE_VERSION "3.4.11"
-        \\#define MARIADB_PACKAGE_VERSION_ID 30411
-        \\#define MARIADB_SYSTEM_TYPE "{s}"
-        \\#define MARIADB_MACHINE_TYPE "{s}"
-        \\#define MARIADB_PLUGINDIR "/usr/local/lib/mariadb/plugin"
-        \\
-        \\#ifndef MYSQL_CHARSET
-        \\#define MYSQL_CHARSET ""
-        \\#endif
-        \\
-        \\#define CC_SOURCE_REVISION "3.4.11"
-        \\
-        \\#endif /* _mariadb_version_h_ */
-        \\
-    , .{ system_name, machine_name }) catch @panic("OOM");
-
-    _ = wf.add("include/mariadb_version.h", version_h);
+    const version_header = b.addConfigHeader(
+        .{
+            .style = .{ .cmake = upstream.path("include/mariadb_version.h.in") },
+            .include_path = "mariadb_version.h",
+        },
+        .{
+            .PROTOCOL_VERSION = @as(i64, 10),
+            .MARIADB_CLIENT_VERSION = "3.4.11",
+            .MARIADB_BASE_VERSION = "mariadb-3.4",
+            .MARIADB_VERSION_ID = @as(i64, 30411),
+            .MARIADB_PORT = @as(i64, 3306),
+            .MARIADB_UNIX_ADDR = "/tmp/mysql.sock",
+            .CPACK_PACKAGE_VERSION = "3.4.11",
+            .MARIADB_PACKAGE_VERSION_ID = @as(i64, 30411),
+            .CMAKE_SYSTEM_NAME = system_name,
+            .CMAKE_SYSTEM_PROCESSOR = machine_name,
+            .CMAKE_INSTALL_PREFIX = "/usr/local",
+            .INSTALL_PLUGINDIR = "lib/mariadb/plugin",
+            .default_charset = "utf8mb4",
+            .CC_SOURCE_REVISION = "3.4.11",
+        },
+    );
 
     // 3. ma_client_plugin.c
     const ssl_plugin_decl = if (ssl_backend != .none)
@@ -225,8 +159,7 @@ pub fn build(b: *std.Build) void {
     const marker_idx = std.mem.indexOf(u8, template_content, marker) orelse @panic("Could not find marker in ma_client_plugin.c.in");
     const rest_content = template_content[marker_idx..];
 
-    const client_plugin_c = std.fmt.allocPrint(
-        b.allocator,
+    const client_plugin_c = std.fmt.allocPrint(b.allocator,
         \\#define FORCE_INIT_OF_VARS 1
         \\#include <ma_global.h>
         \\#include <ma_sys.h>
@@ -292,15 +225,17 @@ pub fn build(b: *std.Build) void {
 
     _ = wf.add("libmariadb/ma_client_plugin.c", client_plugin_c);
 
-    // 4. zconf.h for bundled zlib
-    if (zlib_mode == .bundled) {
-        const zconf_in_path = upstream.path("external/zlib/zconf.h.cmakein").getPath(b);
-        const zconf_raw = std.Io.Dir.cwd().readFileAlloc(b.graph.io, zconf_in_path, b.allocator, .limited(1024 * 1024)) catch @panic("Failed to read zconf.h.cmakein");
-        const zconf_s1 = std.mem.replaceOwned(u8, b.allocator, zconf_raw, "#cmakedefine Z_PREFIX", "/* #undef Z_PREFIX */") catch @panic("OOM");
-        const zconf_s2 = std.mem.replaceOwned(u8, b.allocator, zconf_s1, "#cmakedefine Z_HAVE_UNISTD_H", "#define Z_HAVE_UNISTD_H 1") catch @panic("OOM");
-        _ = wf.add("include/zconf.h", zconf_s2);
-        _ = wf.add("external/zlib/zconf.h", zconf_s2);
-    }
+    // 4. zconf.h for bundled zlib generated from external/zlib/zconf.h.cmakein
+    const zconf_header = if (zlib_mode == .bundled) b.addConfigHeader(
+        .{
+            .style = .{ .cmake = upstream.path("external/zlib/zconf.h.cmakein") },
+            .include_path = "zconf.h",
+        },
+        .{
+            .Z_PREFIX = null,
+            .Z_HAVE_UNISTD_H = if (is_windows) null else @as(i64, 1),
+        },
+    ) else null;
 
     // Common compiler flags
     const base_flags: []const []const u8 = &.{
@@ -493,7 +428,6 @@ pub fn build(b: *std.Build) void {
     }) catch @panic("OOM");
 
     const gen_dir = wf.getDirectory();
-    const inc_dir = gen_dir.path(b, "include");
 
     // Configure function
     const configureTarget = struct {
@@ -503,11 +437,13 @@ pub fn build(b: *std.Build) void {
             sources_list: []const []const u8,
             cflags_list: []const []const u8,
             upstream_dep: *std.Build.Dependency,
+            version_h: *std.Build.Step.ConfigHeader,
+            ma_config_h: *std.Build.Step.ConfigHeader,
+            config_h: *std.Build.Step.ConfigHeader,
+            zconf_h: ?*std.Build.Step.ConfigHeader,
             gen: std.Build.LazyPath,
-            inc: std.Build.LazyPath,
             ssl: SslBackend,
             zlib: ZlibMode,
-            darwin: bool,
             win: bool,
             linux: bool,
             custom_openssl_inc: ?[]const u8,
@@ -515,8 +451,15 @@ pub fn build(b: *std.Build) void {
         ) void {
             step.root_module.link_libc = true;
 
+            // Config headers
+            step.root_module.addConfigHeader(version_h);
+            step.root_module.addConfigHeader(ma_config_h);
+            step.root_module.addConfigHeader(config_h);
+            if (zconf_h) |zh| {
+                step.root_module.addConfigHeader(zh);
+            }
+
             // Include paths
-            step.root_module.addIncludePath(inc);
             step.root_module.addIncludePath(upstream_dep.path("include"));
             step.root_module.addIncludePath(upstream_dep.path("libmariadb"));
             step.root_module.addIncludePath(upstream_dep.path("plugins/pvio"));
@@ -549,27 +492,6 @@ pub fn build(b: *std.Build) void {
                     step.root_module.addLibraryPath(.{ .cwd_relative = p });
                 }
 
-                if (darwin) {
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/lib" });
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/opt/homebrew/opt/openssl/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/opt/openssl/lib" });
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/opt/homebrew/opt/openssl@3/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/opt/openssl@3/lib" });
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/opt/openssl/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/local/opt/openssl/lib" });
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/opt/openssl@3/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/local/opt/openssl@3/lib" });
-                } else if (linux) {
-                    step.root_module.addIncludePath(.{ .cwd_relative = "/usr/include" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib/aarch64-linux-gnu" });
-                    step.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
-                }
-
                 step.root_module.linkSystemLibrary("ssl", .{});
                 step.root_module.linkSystemLibrary("crypto", .{});
             } else if (ssl == .schannel) {
@@ -594,25 +516,13 @@ pub fn build(b: *std.Build) void {
             }
 
             // Header installations
-            step.installHeader(upstream_dep.path("include/mariadb_com.h"), "mariadb/mariadb_com.h");
-            step.installHeader(upstream_dep.path("include/mysql.h"), "mariadb/mysql.h");
-            step.installHeader(upstream_dep.path("include/mariadb_stmt.h"), "mariadb/mariadb_stmt.h");
-            step.installHeader(upstream_dep.path("include/ma_pvio.h"), "mariadb/ma_pvio.h");
-            step.installHeader(upstream_dep.path("include/ma_tls.h"), "mariadb/ma_tls.h");
-            step.installHeader(inc.path(b_ctx, "mariadb_version.h"), "mariadb/mariadb_version.h");
-            step.installHeader(upstream_dep.path("include/ma_list.h"), "mariadb/ma_list.h");
-            step.installHeader(upstream_dep.path("include/errmsg.h"), "mariadb/errmsg.h");
-            step.installHeader(upstream_dep.path("include/mariadb_dyncol.h"), "mariadb/mariadb_dyncol.h");
-            step.installHeader(upstream_dep.path("include/mariadb_ctype.h"), "mariadb/mariadb_ctype.h");
-            step.installHeader(upstream_dep.path("include/mariadb_rpl.h"), "mariadb/mariadb_rpl.h");
-            step.installHeader(upstream_dep.path("include/mysqld_error.h"), "mariadb/mysqld_error.h");
-
-            step.installHeader(upstream_dep.path("include/mysql.h"), "mysql.h");
-            step.installHeader(upstream_dep.path("include/errmsg.h"), "errmsg.h");
-            step.installHeader(inc.path(b_ctx, "mariadb_version.h"), "mariadb_version.h");
-            step.installHeader(upstream_dep.path("include/mysql/client_plugin.h"), "mysql/client_plugin.h");
-            step.installHeader(upstream_dep.path("include/mysql/plugin_auth.h"), "mysql/plugin_auth.h");
-            step.installHeader(upstream_dep.path("include/mariadb/ma_io.h"), "mariadb/ma_io.h");
+            step.installHeadersDirectory(upstream_dep.path("include"), "", .{});
+            step.installConfigHeader(version_h);
+            step.installConfigHeader(ma_config_h);
+            step.installConfigHeader(config_h);
+            if (zconf_h) |zh| {
+                step.installConfigHeader(zh);
+            }
         }
     };
 
@@ -634,11 +544,13 @@ pub fn build(b: *std.Build) void {
             all_sources,
             cflags,
             upstream,
+            version_header,
+            ma_config_header,
+            config_header,
+            zconf_header,
             gen_dir,
-            inc_dir,
             ssl_backend,
             zlib_mode,
-            is_darwin,
             is_windows,
             is_linux,
             openssl_include_dir,
@@ -663,11 +575,13 @@ pub fn build(b: *std.Build) void {
             all_sources,
             cflags,
             upstream,
+            version_header,
+            ma_config_header,
+            config_header,
+            zconf_header,
             gen_dir,
-            inc_dir,
             ssl_backend,
             zlib_mode,
-            is_darwin,
             is_windows,
             is_linux,
             openssl_include_dir,
@@ -680,6 +594,8 @@ pub fn build(b: *std.Build) void {
     // Default primary artifact for linking
     const primary_lib = static_lib orelse shared_lib.?;
 
+    b.addNamedLazyPath("include", upstream.path("include"));
+
     // Expose as a Zig module for consumers
     const mod = b.addModule("mariadb", .{
         .root_source_file = b.path("src/root.zig"),
@@ -691,7 +607,12 @@ pub fn build(b: *std.Build) void {
     } else if (is_linux) {
         mod.addCMacro("_GNU_SOURCE", "");
     }
-    mod.addIncludePath(inc_dir);
+    mod.addConfigHeader(version_header);
+    mod.addConfigHeader(ma_config_header);
+    mod.addConfigHeader(config_header);
+    if (zconf_header) |zh| {
+        mod.addConfigHeader(zh);
+    }
     mod.addIncludePath(upstream.path("include"));
     mod.linkLibrary(primary_lib);
 

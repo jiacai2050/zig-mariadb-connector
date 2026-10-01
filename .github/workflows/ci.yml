@@ -16,6 +16,9 @@ jobs:
   native-build-test:
     name: Native Build & Test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +38,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Setup OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if brew --prefix openssl >/dev/null 2>&1; then
+            echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          fi
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -44,6 +54,11 @@ jobs:
 
       - name: Show Zig version
         run: zig version
+
+      - name: Ensure Zig cache directories
+        run: |
+          mkdir -p .zig-cache/tmp
+          mkdir -p "${ZIG_GLOBAL_CACHE_DIR:-.zig-cache}/tmp"
 
       - name: Build (Debug)
         run: zig build
@@ -60,6 +75,9 @@ jobs:
   cross-compile:
     name: Cross-Compilation Checks
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -71,6 +89,11 @@ jobs:
 
       - name: Show Zig version
         run: zig version
+
+      - name: Ensure Zig cache directories
+        run: |
+          mkdir -p .zig-cache/tmp
+          mkdir -p "${ZIG_GLOBAL_CACHE_DIR:-.zig-cache}/tmp"
 
       - name: Cross-compile x86_64-windows
         run: zig build -Dtarget=x86_64-windows

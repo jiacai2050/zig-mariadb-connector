@@ -2,6 +2,15 @@
 
 A pure `zig build` package for [MariaDB Connector/C](https://github.com/mariadb-corporation/mariadb-connector-c) (3.4.11) with zero CMake dependency.
 
+## Prerequisites
+
+- **Windows**: No dependencies needed (uses native Schannel & WinCrypt).
+- **macOS**: `brew install openssl pkg-config`
+- **Linux (Debian/Ubuntu)**: `sudo apt install libssl-dev pkg-config`
+- **Linux (RHEL/Fedora)**: `sudo dnf install openssl-devel pkgconf`
+
+> Note: If OpenSSL is installed in a non-standard path, pass `-Dopenssl-include-dir=<path>` and `-Dopenssl-lib-dir=<path>`. Or use `-Dssl=none` to disable TLS.
+
 ## Quick Start
 
 ```bash
