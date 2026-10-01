@@ -8,7 +8,7 @@ pub fn main() !void {
     const mysql = mariadb.c.mysql_init(null);
     if (mysql == null) {
         std.debug.print("Failed to initialize MySQL handle\n", .{});
-        return;
+        return error.InitFailed;
     }
     defer mariadb.c.mysql_close(mysql);
 

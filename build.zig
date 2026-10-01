@@ -31,10 +31,7 @@ pub fn build(b: *std.Build) void {
     const is_darwin = target.result.os.tag.isDarwin();
     const is_linux = target.result.os.tag == .linux;
 
-    // Generated files
-    const wf = b.addWriteFiles();
-
-    // 1. ma_config.h and config.h generated from upstream include/ma_config.h.in
+    // 1. ma_config.h generated from upstream include/ma_config.h.in
     const ma_config_values = .{
         .HAVE_ALLOCA_H = !is_windows,
         .HAVE_BIGENDIAN = (target.result.cpu.arch.endian() == .big),
@@ -103,14 +100,6 @@ pub fn build(b: *std.Build) void {
         ma_config_values,
     );
 
-    const config_header = b.addConfigHeader(
-        .{
-            .style = .{ .cmake = upstream.path("include/ma_config.h.in") },
-            .include_path = "config.h",
-        },
-        ma_config_values,
-    );
-
     // 2. mariadb_version.h generated from upstream mariadb_version.h.in
     const system_name = @tagName(target.result.os.tag);
     const machine_name = @tagName(target.result.cpu.arch);
@@ -138,11 +127,12 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    // 3. ma_client_plugin.c
+    // 3. ma_client_plugin.c generated from upstream libmariadb/ma_client_plugin.c.in
     const ssl_plugin_decl = if (ssl_backend != .none)
         \\extern struct st_mysql_client_plugin_AUTHENTICATION caching_sha2_password_client_plugin;
         \\extern struct st_mysql_client_plugin_AUTH sha256_password_client_plugin;
         \\extern struct st_mysql_client_plugin_AUTH client_ed25519_client_plugin;
+        \\
     else
         "";
 
@@ -150,80 +140,39 @@ pub fn build(b: *std.Build) void {
         \\  (struct st_mysql_client_plugin *)&caching_sha2_password_client_plugin,
         \\  (struct st_mysql_client_plugin *)&sha256_password_client_plugin,
         \\  (struct st_mysql_client_plugin *)&client_ed25519_client_plugin,
+        \\
     else
         "";
 
-    const template_path = upstream.path("libmariadb/ma_client_plugin.c.in").getPath(b);
-    const template_content = std.Io.Dir.cwd().readFileAlloc(b.graph.io, template_path, b.allocator, .limited(2 * 1024 * 1024)) catch @panic("Failed to read ma_client_plugin.c.in");
-    const marker = "static int is_not_initialized(MYSQL *mysql, const char *name)";
-    const marker_idx = std.mem.indexOf(u8, template_content, marker) orelse @panic("Could not find marker in ma_client_plugin.c.in");
-    const rest_content = template_content[marker_idx..];
-
-    const client_plugin_c = std.fmt.allocPrint(b.allocator,
-        \\#define FORCE_INIT_OF_VARS 1
-        \\#include <ma_global.h>
-        \\#include <ma_sys.h>
-        \\#include <ma_common.h>
-        \\#include <ma_string.h>
-        \\#include <ma_pthread.h>
-        \\#include "errmsg.h"
-        \\#include <mysql/client_plugin.h>
-        \\
-        \\#ifndef WIN32
-        \\#include <dlfcn.h>
-        \\#endif
-        \\
-        \\const char *disabled_plugins = "mysql_old_password";
-        \\
-        \\struct st_client_plugin_int {{
-        \\  struct st_client_plugin_int *next;
-        \\  void   *dlhandle;
-        \\  struct st_mysql_client_plugin *plugin;
-        \\}};
-        \\
-        \\static my_bool initialized = 0;
-        \\static MA_MEM_ROOT mem_root;
-        \\
-        \\static uint valid_plugins[][2] = {{
-        \\  {{MYSQL_CLIENT_AUTHENTICATION_PLUGIN, MYSQL_CLIENT_AUTHENTICATION_PLUGIN_INTERFACE_VERSION}},
-        \\  {{MARIADB_CLIENT_PVIO_PLUGIN, MARIADB_CLIENT_PVIO_PLUGIN_INTERFACE_VERSION}},
-        \\  {{MARIADB_CLIENT_TRACE_PLUGIN, MARIADB_CLIENT_TRACE_PLUGIN_INTERFACE_VERSION}},
-        \\  {{MARIADB_CLIENT_REMOTEIO_PLUGIN, MARIADB_CLIENT_REMOTEIO_PLUGIN_INTERFACE_VERSION}},
-        \\  {{MARIADB_CLIENT_CONNECTION_PLUGIN, MARIADB_CLIENT_CONNECTION_PLUGIN_INTERFACE_VERSION}},
-        \\  {{MARIADB_CLIENT_COMPRESSION_PLUGIN, MARIADB_CLIENT_COMPRESSION_PLUGIN_INTERFACE_VERSION}},
-        \\  {{0, 0}}
-        \\}};
-        \\
-        \\struct st_client_plugin_int *plugin_list[MYSQL_CLIENT_MAX_PLUGINS + MARIADB_CLIENT_MAX_PLUGINS];
-        \\#ifdef THREAD
-        \\static pthread_mutex_t LOCK_load_client_plugin;
-        \\#endif
-        \\
+    const external_plugins = b.fmt(
         \\extern struct st_mysql_client_plugin_AUTH mysql_native_password_client_plugin;
         \\extern struct st_mysql_client_plugin_COMPRESSION zlib_client_plugin;
         \\extern struct st_mysql_client_plugin_PVIO pvio_socket_client_plugin;
         \\extern struct st_mysql_client_plugin_AUTH mysql_clear_password_client_plugin;
         \\extern struct st_mysql_client_plugin_AUTH dialog_client_plugin;
         \\{s}
-        \\
-        \\struct st_mysql_client_plugin *mysql_client_builtins[] = {{
-        \\  (struct st_mysql_client_plugin *)&mysql_native_password_client_plugin,
+    , .{ssl_plugin_decl});
+
+    const builtin_plugins = b.fmt(
+        \\(struct st_mysql_client_plugin *)&mysql_native_password_client_plugin,
         \\  (struct st_mysql_client_plugin *)&zlib_client_plugin,
         \\  (struct st_mysql_client_plugin *)&pvio_socket_client_plugin,
         \\  (struct st_mysql_client_plugin *)&mysql_clear_password_client_plugin,
         \\  (struct st_mysql_client_plugin *)&dialog_client_plugin,
         \\{s}
-        \\  0
-        \\}};
-        \\
-        \\{s}
-    , .{
-        ssl_plugin_decl,
-        ssl_plugin_builtin,
-        rest_content,
-    }) catch @panic("OOM");
+    , .{ssl_plugin_builtin});
 
-    _ = wf.add("libmariadb/ma_client_plugin.c", client_plugin_c);
+    const client_plugin_c = b.addConfigHeader(
+        .{
+            .style = .{ .cmake = upstream.path("libmariadb/ma_client_plugin.c.in") },
+            .include_path = "ma_client_plugin.c",
+        },
+        .{
+            .PLUGINS_DISABLED = "mysql_old_password",
+            .EXTERNAL_PLUGINS = external_plugins,
+            .BUILTIN_PLUGINS = builtin_plugins,
+        },
+    );
 
     // 4. zconf.h for bundled zlib generated from external/zlib/zconf.h.cmakein
     const zconf_header = if (zlib_mode == .bundled) b.addConfigHeader(
@@ -427,21 +376,17 @@ pub fn build(b: *std.Build) void {
         if (is_windows) win_sources else &.{},
     }) catch @panic("OOM");
 
-    const gen_dir = wf.getDirectory();
-
     // Configure function
     const configureTarget = struct {
         fn run(
             step: *std.Build.Step.Compile,
-            b_ctx: *std.Build,
             sources_list: []const []const u8,
             cflags_list: []const []const u8,
             upstream_dep: *std.Build.Dependency,
             version_h: *std.Build.Step.ConfigHeader,
             ma_config_h: *std.Build.Step.ConfigHeader,
-            config_h: *std.Build.Step.ConfigHeader,
             zconf_h: ?*std.Build.Step.ConfigHeader,
-            gen: std.Build.LazyPath,
+            client_plugin_file: std.Build.LazyPath,
             ssl: SslBackend,
             zlib: ZlibMode,
             win: bool,
@@ -454,7 +399,6 @@ pub fn build(b: *std.Build) void {
             // Config headers
             step.root_module.addConfigHeader(version_h);
             step.root_module.addConfigHeader(ma_config_h);
-            step.root_module.addConfigHeader(config_h);
             if (zconf_h) |zh| {
                 step.root_module.addConfigHeader(zh);
             }
@@ -479,7 +423,7 @@ pub fn build(b: *std.Build) void {
 
             // Generated ma_client_plugin.c
             step.root_module.addCSourceFile(.{
-                .file = gen.path(b_ctx, "libmariadb/ma_client_plugin.c"),
+                .file = client_plugin_file,
                 .flags = cflags_list,
             });
 
@@ -514,15 +458,6 @@ pub fn build(b: *std.Build) void {
             if (zlib == .system) {
                 step.root_module.linkSystemLibrary("z", .{});
             }
-
-            // Header installations
-            step.installHeadersDirectory(upstream_dep.path("include"), "", .{});
-            step.installConfigHeader(version_h);
-            step.installConfigHeader(ma_config_h);
-            step.installConfigHeader(config_h);
-            if (zconf_h) |zh| {
-                step.installConfigHeader(zh);
-            }
         }
     };
 
@@ -540,15 +475,13 @@ pub fn build(b: *std.Build) void {
         });
         configureTarget.run(
             lib,
-            b,
             all_sources,
             cflags,
             upstream,
             version_header,
             ma_config_header,
-            config_header,
             zconf_header,
-            gen_dir,
+            client_plugin_c.getOutputFile(),
             ssl_backend,
             zlib_mode,
             is_windows,
@@ -571,15 +504,13 @@ pub fn build(b: *std.Build) void {
         });
         configureTarget.run(
             lib,
-            b,
             all_sources,
             cflags,
             upstream,
             version_header,
             ma_config_header,
-            config_header,
             zconf_header,
-            gen_dir,
+            client_plugin_c.getOutputFile(),
             ssl_backend,
             zlib_mode,
             is_windows,
@@ -594,7 +525,19 @@ pub fn build(b: *std.Build) void {
     // Default primary artifact for linking
     const primary_lib = static_lib orelse shared_lib.?;
 
-    b.addNamedLazyPath("include", upstream.path("include"));
+    // Header installations (installed on both so either artifact provides headers when linked)
+    for (&[_]?*std.Build.Step.Compile{ static_lib, shared_lib }) |maybe_lib| {
+        if (maybe_lib) |lib| {
+            lib.installHeadersDirectory(upstream.path("include"), "", .{});
+            lib.installConfigHeader(version_header);
+            lib.installConfigHeader(ma_config_header);
+            if (zconf_header) |zh| {
+                lib.installConfigHeader(zh);
+            }
+        }
+    }
+
+    b.addNamedLazyPath("include", primary_lib.getEmittedIncludeTree());
 
     // Expose as a Zig module for consumers
     const mod = b.addModule("mariadb", .{
@@ -609,41 +552,17 @@ pub fn build(b: *std.Build) void {
     }
     mod.addConfigHeader(version_header);
     mod.addConfigHeader(ma_config_header);
-    mod.addConfigHeader(config_header);
     if (zconf_header) |zh| {
         mod.addConfigHeader(zh);
     }
     mod.addIncludePath(upstream.path("include"));
     mod.linkLibrary(primary_lib);
 
-    // Test executable
-    const exe = b.addExecutable(.{
-        .name = "mariadb-test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "mariadb", .module = mod },
-            },
-        }),
-    });
-    exe.root_module.linkLibrary(primary_lib);
-    b.installArtifact(exe);
-
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-    const run_step = b.step("run", "Run test application");
-    run_step.dependOn(&run_cmd.step);
-
     // Unit tests
     const unit_tests = b.addTest(.{
         .root_module = mod,
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
-    const test_step = b.step("test", "Run tests");
+    const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 }

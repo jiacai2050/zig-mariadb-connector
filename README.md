@@ -17,9 +17,11 @@ A pure `zig build` package for [MariaDB Connector/C](https://github.com/mariadb-
 # Build static & shared libraries
 zig build
 
-# Run sample CLI & tests
-zig build run
+# Run unit tests
 zig build test
+
+# Run test application (in separate test/ project)
+cd test && zig build run
 
 # Cross-compile for Windows (uses native Schannel/WinCrypt, zero external deps)
 zig build -Dtarget=x86_64-windows
@@ -37,19 +39,24 @@ zig fetch --save git+https://github.com/jiacai2050/zig-mariadb-connector.git
 zig fetch --save git+https://github.com/jiacai2050/zig-mariadb-connector.git#v0.1.0
 ```
 
-In `build.zig`:
+### Usage Patterns
+
+In your `build.zig`:
 
 ```zig
-const mariadb = b.dependency("zig_mariadb_connector", .{
+const mariadb_dep = b.dependency("zig_mariadb_connector", .{
     .target = target,
     .optimize = optimize,
 });
-
-exe.root_module.addImport("mariadb", mariadb.module("mariadb"));
-exe.root_module.linkLibrary(mariadb.artifact("mariadbclient"));
 ```
 
-In your Zig code:
+#### 1. As a Zig Module (Recommended for Zig)
+
+```zig
+exe.root_module.addImport("mariadb", mariadb_dep.module("mariadb"));
+```
+
+In your Zig source:
 
 ```zig
 const std = @import("std");
@@ -60,6 +67,32 @@ pub fn main() !void {
     const conn = mariadb.c.mysql_init(null) orelse return error.InitFailed;
     defer mariadb.c.mysql_close(conn);
 }
+```
+
+#### 2. Linking C Library Artifacts (Headers automatically available)
+
+When linking the static (`mariadbclient`) or shared (`mariadb`) library, Zig automatically adds all installed headers (including `mysql.h`, `mariadb_version.h`, `ma_config.h`, etc.) to your module's include path:
+
+```zig
+// In build.zig:
+exe.linkLibrary(mariadb_dep.artifact("mariadbclient")); // or "mariadb"
+```
+
+In your C/C++ or `@cImport` source code, headers can be included directly without configuring include paths:
+
+```c
+#include <mysql.h>
+#include <errmsg.h>
+#include <mariadb_version.h>
+```
+
+#### 3. Headers Only (Without linking)
+
+If a build step only needs the complete header directory (e.g. for custom steps, binding generation, or probing):
+
+```zig
+// In build.zig:
+exe.addIncludePath(mariadb_dep.namedLazyPath("include"));
 ```
 
 ## Build Options
