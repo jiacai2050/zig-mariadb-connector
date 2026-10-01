@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-build-test:
+    name: Native Build & Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x86_64
+          - os: macos-latest
+            name: macOS Apple Silicon
+          - os: windows-latest
+            name: Windows x86_64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Show Zig version
+        run: zig version
+
+      - name: Build (Debug)
+        run: zig build
+
+      - name: Build (ReleaseFast)
+        run: zig build -Doptimize=ReleaseFast
+
+      - name: Run CLI Test
+        run: zig build run
+
+      - name: Run Unit Tests
+        run: zig build test
+
+  cross-compile:
+    name: Cross-Compilation Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Show Zig version
+        run: zig version
+
+      - name: Cross-compile x86_64-windows
+        run: zig build -Dtarget=x86_64-windows
+
+      - name: Cross-compile aarch64-windows
+        run: zig build -Dtarget=aarch64-windows

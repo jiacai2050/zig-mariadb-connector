@@ -1,0 +1,19 @@
+.{
+    .name = .zig_mariadb_connector,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0xc9437c546deca3a,
+    .dependencies = .{
+        .upstream = .{
+            // https://github.com/mariadb-corporation/mariadb-connector-c/releases/tag/v3.4.11
+            .url = "https://github.com/mariadb-corporation/mariadb-connector-c/archive/refs/tags/v3.4.11.zip",
+            .hash = "N-V-__8AAAmOTADhwz2HBneDfAqTzHBuaefbDKKDFuswqYnn",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}
