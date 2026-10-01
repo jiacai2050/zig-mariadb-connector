@@ -1,6 +1,6 @@
 # zig-mariadb-connector
 
-A pure `zig build` package for [MariaDB Connector/C](https://github.com/mariadb-corporation/mariadb-connector-c) (3.4.11) with zero CMake dependency.
+This is [MariaDB Connector/C](https://github.com/mariadb-corporation/mariadb-connector-c), packaged for Zig. Zero CMake required.
 
 ## Prerequisites
 
@@ -9,16 +9,13 @@ A pure `zig build` package for [MariaDB Connector/C](https://github.com/mariadb-
 - **Linux (Debian/Ubuntu)**: `sudo apt install libssl-dev pkg-config`
 - **Linux (RHEL/Fedora)**: `sudo dnf install openssl-devel pkgconf`
 
-> Note: If OpenSSL is installed in a non-standard path, pass `-Dopenssl-include-dir=<path>` and `-Dopenssl-lib-dir=<path>`. Or use `-Dssl=none` to disable TLS.
+> Note: If OpenSSL is installed in a non-standard path, pass `-Dopenssl-include-dir=<path>` and `-Dopenssl-lib-dir=<path>`.
 
 ## Quick Start
 
 ```bash
-# Build static & shared libraries
+# Build static library
 zig build
-
-# Run unit tests
-zig build test
 
 # Run test application (in separate test/ project)
 cd test && zig build run
@@ -33,65 +30,70 @@ Run in your project directory:
 
 ```bash
 # Latest version
-zig fetch --save git+https://github.com/jiacai2050/zig-mariadb-connector.git
+zig fetch --save=mariadb-connector git+https://github.com/jiacai2050/zig-mariadb-connector.git
 
-# Tagged version
-zig fetch --save git+https://github.com/jiacai2050/zig-mariadb-connector.git#v0.1.0
+# Replace <refname> with the version you want to use, e.g. v0.1.0
+zig fetch --save=mariadb-connector git+https://github.com/jiacai2050/zig-mariadb-connector.git#<refname>
 ```
 
-### Usage Patterns
+### Usage
 
 In your `build.zig`:
 
 ```zig
-const mariadb_dep = b.dependency("zig_mariadb_connector", .{
+const mariadb_dep = b.dependency("mariadb_connector", .{
     .target = target,
     .optimize = optimize,
 });
+
+// Translate C headers into a Zig module
+const c_h = b.addWriteFiles().add("c.h",
+    \\#include <mysql.h>
+    \\#include <errmsg.h>
+    \\#include <mariadb_version.h>
+);
+
+const translate_c = b.addTranslateC(.{
+    .root_source_file = c_h,
+    .target = target,
+    .optimize = optimize,
+});
+translate_c.addIncludePath(mariadb_dep.namedLazyPath("include"));
+const c_mod = translate_c.createModule();
+
+// Pass to your executable/library
+const exe = b.addExecutable(.{
+    .name = "my-app",
+    .root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "c", .module = c_mod },
+        },
+    }),
+});
+exe.root_module.linkLibrary(mariadb_dep.artifact("mariadbclient"));
 ```
 
-#### 1. As a Zig Module (Recommended for Zig)
-
-```zig
-exe.root_module.addImport("mariadb", mariadb_dep.module("mariadb"));
-```
-
-In your Zig source:
+Then in your Zig source (`src/main.zig`):
 
 ```zig
 const std = @import("std");
-const mariadb = @import("mariadb");
+const c = @import("c");
 
 pub fn main() !void {
-    std.debug.print("Version: {s}\n", .{mariadb.getClientInfo()});
-    const conn = mariadb.c.mysql_init(null) orelse return error.InitFailed;
-    defer mariadb.c.mysql_close(conn);
+    std.debug.print("Version: {s}\n", .{c.mysql_get_client_info()});
+    const conn = c.mysql_init(null) orelse return error.InitFailed;
+    defer c.mysql_close(conn);
 }
 ```
 
-#### 2. Linking C Library Artifacts (Headers automatically available)
-
-When linking the static (`mariadbclient`) or shared (`mariadb`) library, Zig automatically adds all installed headers (including `mysql.h`, `mariadb_version.h`, `ma_config.h`, etc.) to your module's include path:
-
-```zig
-// In build.zig:
-exe.linkLibrary(mariadb_dep.artifact("mariadbclient")); // or "mariadb"
-```
-
-In your C/C++ or `@cImport` source code, headers can be included directly without configuring include paths:
-
-```c
-#include <mysql.h>
-#include <errmsg.h>
-#include <mariadb_version.h>
-```
-
-#### 3. Headers Only (Without linking)
+#### Headers Only (Without linking)
 
 If a build step only needs the complete header directory (e.g. for custom steps, binding generation, or probing):
 
 ```zig
-// In build.zig:
 exe.addIncludePath(mariadb_dep.namedLazyPath("include"));
 ```
 
@@ -99,9 +101,6 @@ exe.addIncludePath(mariadb_dep.namedLazyPath("include"));
 
 | Option | Default | Description |
 |---|---|---|
-| `-Dstatic` | `true` | Build static library (`libmariadbclient.a` / `mariadbclient.lib`) |
-| `-Dshared` | `true` | Build shared library (`libmariadb.dylib` / `.so` / `mariadb.dll`) |
-| `-Dssl` | `auto` | TLS backend: `openssl` (Linux/macOS), `schannel` (Windows), or `none` |
 | `-Dzlib` | `bundled` | `bundled` or `system` |
 | `-Ddyncol` | `true` | Enable dynamic columns |
 | `-Dopenssl-include-dir` | null | Custom OpenSSL include dir |

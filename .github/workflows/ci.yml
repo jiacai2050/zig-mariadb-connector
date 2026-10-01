@@ -66,9 +66,6 @@ jobs:
       - name: Build (ReleaseFast)
         run: zig build -Doptimize=ReleaseFast
 
-      - name: Run Unit Tests
-        run: zig build test
-
       - name: Run Test Application
         run: |
           cd test

@@ -3,7 +3,7 @@
     .version = "0.0.0",
     .fingerprint = 0xb013ac08772c7223,
     .dependencies = .{
-        .zig_mariadb_connector = .{
+        .mariadb_connector = .{
             .path = "..",
         },
     },
