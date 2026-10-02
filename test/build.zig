@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const mariadb_lib = mariadb_dep.artifact("mariadbclient");
 
     const c_h = b.addWriteFiles().add("c.h",
         \\#include <mysql.h>
@@ -20,7 +21,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    translate_c.addIncludePath(mariadb_dep.namedLazyPath("include"));
+    translate_c.addIncludePath(mariadb_lib.getEmittedIncludeTree());
     const c_mod = translate_c.createModule();
 
     const exe = b.addExecutable(.{
@@ -34,7 +35,7 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    exe.root_module.linkLibrary(mariadb_dep.artifact("mariadbclient"));
+    exe.root_module.linkLibrary(mariadb_lib);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

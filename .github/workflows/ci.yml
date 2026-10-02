@@ -60,16 +60,12 @@ jobs:
           mkdir -p .zig-cache/tmp
           mkdir -p "${ZIG_GLOBAL_CACHE_DIR:-.zig-cache}/tmp"
 
-      - name: Build (Debug)
-        run: zig build
+      - name: Install Make (Windows)
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress
 
-      - name: Build (ReleaseFast)
-        run: zig build -Doptimize=ReleaseFast
-
-      - name: Run Test Application
-        run: |
-          cd test
-          zig build run
+      - name: Build & Test
+        run: make
 
   cross-compile:
     name: Cross-Compilation Checks
@@ -94,8 +90,5 @@ jobs:
           mkdir -p .zig-cache/tmp
           mkdir -p "${ZIG_GLOBAL_CACHE_DIR:-.zig-cache}/tmp"
 
-      - name: Cross-compile x86_64-windows
-        run: zig build -Dtarget=x86_64-windows
-
-      - name: Cross-compile aarch64-windows
-        run: zig build -Dtarget=aarch64-windows
+      - name: Cross-compile
+        run: make cross-compile
